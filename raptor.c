@@ -1,14 +1,17 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdlib.h>
+
 #include <time.h>
+#include <string.h>
+
+#include <windows.h>
 
 #define PROC_TIME (float)( clock() ) / (float)( CLOCKS_PER_SEC )
-#define ENABLE_ANSI false
 
 // processor architecture definition; syntactic sugar for numbers
-enum stages { fetch, fetch_aux, execute };
+enum stages     { fetch, fetch_aux, execute };
 enum ppu_stages { standby, preload, evaluate, advance };
 
 enum gp_regs { a, b, c, d, e, f, x, y };
@@ -206,46 +209,7 @@ void rom_preloader() {
 	}
 }
 
-// display the CPU's status on the terminal, on an interval (requires ANSI esc. sequence recognition)
-void update_terminal() {
-	uint8_t  display_page;
-	uint16_t display_offset;
-	
-	timer_new = (float)( clock() ) / (float)( CLOCKS_PER_SEC );
-	if( (timer_new - timer_old) > framerate ) {
-		timer_old = timer_new;
-
-		// locate the cursor to the top-left corner
-		printf( "\e[2H" );
-
-		printf( "microstep: ");
-		switch( cpu.microstep ) {
-			case fetch:     printf( "fetch      " ); break;
-			case fetch_aux: printf( "fetch_aux  " ); break;
-			case execute:   printf( "execute    " ); break;
-		}
-		printf( "clock: %.4f MHz   ", proc_cycle_count / proc_elapsed_time / 1000000 );
-		printf( "\n" );
-
-		printf( "\e[4H" );
-		printf( " program counter     instruction cache\n\e(0");
-		printf( "l PC qqqqqqqqk      l INST qqkl AUX qqqk\e[E" );
-		printf( "x   %02X%04X   x      x  %04X  xx  %04X  x\e[E", cpu.pc_page, cpu.pc_offset, cpu.instruction_word, cpu.auxillary_word );
-		printf( "mqqqqqqqqqqqqj      mqqqqqqqqjmqqqqqqqqj\e[E" );
-		printf( "\e(B" );
-
-		printf( "\e[9H" );
-		printf( " disassembly                flags\n\e(0");
-		printf( "l ASM qqqqqqqqqqqqqqqqqqqqkl STAT qqqqqk\e[E" );
-		printf( "x                         xx           x\e[E" );
-		printf( "mqqqqqqqqqqqqqqqqqqqqqqqqqjmqqCqNqXqYqqj\e[E" );
-		printf( "\e(B" );
-
-		if( alu.carry_flag )    { printf( "\e[11;31H#"); }
-		if( alu.negative_flag ) { printf( "\e[11;33H#"); }
-		if( regs.file[x] == 0 ) { printf( "\e[11;35H#"); }
-		if( regs.file[y] == 0 ) { printf( "\e[11;37H#"); }
-		printf( "\e[11;4H" );
+void print_disassembly() {
 		switch( cpu.inst_opcode ) {
 			case nop: printf( "nop " ); break; case jmp: printf( "jmp " ); break;
 			case jcr: printf( "jcr " ); break; case jng: printf( "jng " ); break;
@@ -306,6 +270,51 @@ void update_terminal() {
 				}
 				break;
 		}
+}
+
+// display the CPU's status on the terminal, on an interval (requires ANSI esc. sequence recognition)
+void update_terminal() {
+	uint8_t  display_page;
+	uint16_t display_offset;
+	
+	timer_new = (float)( clock() ) / (float)( CLOCKS_PER_SEC );
+	if( (timer_new - timer_old) > framerate ) {
+		timer_old = timer_new;
+
+		// locate the cursor to the top-left corner
+		printf( "\e[2H" );
+		
+		switch( cpu.microstep ) {
+			case fetch:     printf( "fetch      " ); break;
+			case fetch_aux: printf( "fetch_aux  " ); break;
+			case execute:   printf( "execute    " ); break;
+		}
+		printf( "clock: %.4f MHz   ", proc_cycle_count / proc_elapsed_time / 1000000 );
+		printf( "\n" );
+
+		printf( "\e[4H" );
+		printf( " program counter     instruction cache\n\e(0");
+		printf( "l PC qqqqqqqqk      l INST qqkl AUX qqqk\e[E" );
+		printf( "x   %02X%04X   x      x  %04X  xx  %04X  x\e[E", cpu.pc_page, cpu.pc_offset, cpu.instruction_word, cpu.auxillary_word );
+		printf( "mqqqqqqqqqqqqj      mqqqqqqqqjmqqqqqqqqj\e[E" );
+		printf( "\e(B" );
+
+		printf( "\e[9H" );
+		printf( " disassembly                flags\n\e(0");
+		printf( "l ASM qqqqqqqqqqqqqqqqqqqqkl STAT qqqqqk\e[E" );
+		printf( "x                         xx           x\e[E" );
+		printf( "mqqqqqqqqqqqqqqqqqqqqqqqqqjmqqCqNqXqYqqj\e[E" );
+		printf( "\e(B" );
+		
+		printf( "\e[11;4H" );
+
+		print_disassembly();
+
+		printf( "\e[11;31H" );
+		printf( alu.carry_flag?     "# ":"  " ); 
+		printf( alu.negative_flag?  "# ":"  " ); 
+		printf( (regs.file[x] == 0)?"# ":"  " ); 
+		printf( (regs.file[y] == 0)?"# ":"  " ); 
 
 		printf( "\e[14H" );
 		printf( " cpu registers\n\e(0" );
@@ -354,66 +363,7 @@ void update_terminal_old() {
 		printf( "  %04X", cpu.instruction_word );
 		printf( cpu.inst_single_word? "      | " : " %04X | ", cpu.auxillary_word );
 		
-		switch( cpu.inst_opcode ) {
-			case nop: printf( "nop " ); break; case jmp: printf( "jmp " ); break;
-			case jcr: printf( "jcr " ); break; case jng: printf( "jng " ); break;
-			case jnc: printf( "jnc " ); break; case jps: printf( "jps " ); break;
-			case jxz: printf( "jxz " ); break; case jyz: printf( "jyz " ); break;
-			case add: printf( "add " ); break; case sub: printf( "sub " ); break;
-			case lsh: printf( "lsh " ); break; case rsh: printf( "rsh " ); break;
-			case and: printf( "and " ); break; case or:  printf( "or  " ); break;
-			case not: printf( "not " ); break; case xor: printf( "xor " ); break;
-			case lda: printf( "lda " ); break; case ldb: printf( "ldb " ); break;
-			case ldc: printf( "ldc " ); break; case ldd: printf( "ldd " ); break;
-			case lde: printf( "lde " ); break; case ldf: printf( "ldf " ); break;
-			case ldx: printf( "ldx " ); break; case ldy: printf( "ldy " ); break;
-			case sta: printf( "sta " ); break; case stb: printf( "stb " ); break;
-			case stc: printf( "stc " ); break; case std: printf( "std " ); break;
-			case ste: printf( "ste " ); break; case stf: printf( "stf " ); break;
-			case stx: printf( "stx " ); break; case sty: printf( "sty " ); break;
-		};
-
-		switch( cpu.inst_type ) {
-			case 0:
-			case 2:
-			case 3:
-				if( cpu.inst_verb != 0 ) {
-				switch( cpu.inst_mode ) {
-					case ri:
-						printf( "ri " );
-						printf( "%c, ", cpu.inst_index_reg?0x59:0x58 );
-						printf( "#%02X", cpu.inst_page );
-						break;
-					case rc:
-						printf( "rc " );
-						printf( "#%02X", cpu.inst_page );
-						if( !cpu.inst_single_word ) { printf( ", $%04X", cpu.inst_offset ); }
-						break;
-					case ai:
-						printf( "ai " );
-						printf( "%c, ", cpu.inst_index_reg?0x59:0x58 );
-						printf( "#%02X", cpu.inst_page );
-						break;
-					case ac:
-						printf( "ac " );
-						printf( "#%02X", cpu.inst_page );
-						if( !cpu.inst_single_word ) { printf( ", $%04X", cpu.inst_offset ); }
-						break;
-				}
-				}
-			break;
-
-			case 1:;
-				bool output_idx = cpu.reg_output >= 6;
-				bool input1_idx = cpu.reg_input_a >= 6;
-				bool input2_idx = cpu.reg_input_b >= 6;
-				switch( cpu.inst_mode ) {
-					case ff: printf( "ff %c <- %c, %c", cpu.reg_output +0x41 +(output_idx *0x11), cpu.reg_input_a +0x41 +(input1_idx *0x11), cpu.reg_input_b +0x41 +(input2_idx *0x11) ); break;
-					case lc: printf( "lc %c <- $%04X", cpu.reg_output +0x41 +(output_idx *0x11), cpu.inst_aux_data ); break;
-					case fc: printf( "fc %c <- %c, $%04X", cpu.reg_output +0x41 +(output_idx *0x11), cpu.reg_input_a +0x41 +(input1_idx *0x11), cpu.inst_aux_data ); break;
-				}
-				break;
-		}
+		print_disassembly();
 		printf( "\n\n" );
 		
 		printf("registers: \n");
@@ -757,26 +707,44 @@ int main(int argc, char* argv[]) {
 	ppu.compositor_charsheet_address = 0x000;
 	ppu.compositor_output_color = 0x0000;
 	
+	// look for -no-ansi flag in program arguments
+	bool enable_ansi = true;
+	if( argc > 1 ) {
+		// if first argument is "-no-ansi"
+		if( strcmp( argv[1], "-no-ansi" ) == 0 ) {
+			// disable escape sequence usage
+			enable_ansi = false;
+		}
+	}
+	
 	// sets correct target FPS for different display modes
 	// 30 FPS for the graphical version or 5 FPS for the text mode version
-	framerate = ENABLE_ANSI? 0.0166667 : 0.2;
+	framerate = enable_ansi? 0.0166667 : 0.2;
 	
 	rom_preloader(); // rom loader for user programs
 	
-	if( ENABLE_ANSI ) { printf( "\e[2J" ); } // clears screen
+	if( enable_ansi ) { printf( "\e[2J" ); } // clears screen
 	
-	while ( true ) {
+	bool running = true;
+	do {
 		// update terminal screen with debug processor data
 		// runs the correct update routine for different windows versions
-		if( ENABLE_ANSI ) { update_terminal(); }
-		else { update_terminal_old(); }
+		if( enable_ansi ) {
+			update_terminal();
+		} else {
+			update_terminal_old();
+		}
 	
 		cpu_tick(); // advance CPU state machine
 		ppu_tick(); // advance PPU state machine
 		
 		proc_cycle_count++; proc_elapsed_time = PROC_TIME; // benchmarking stats
 		cpu.cycle_count = proc_cycle_count & 0xFFFFFF; // update cycle counter
-	}
+		
+		if( GetAsyncKeyState( VK_SPACE ) ) {
+			running = false;
+		}
+	} while (running == true);
 
 	return 0;
 }
