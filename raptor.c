@@ -10,6 +10,8 @@
 
 #define PROC_TIME (float)( clock() ) / (float)( CLOCKS_PER_SEC )
 
+// comment line to test git commit
+
 // processor architecture definition; syntactic sugar for numbers
 enum stages     { fetch, fetch_aux, execute };
 enum ppu_stages { standby, preload, evaluate, advance };
